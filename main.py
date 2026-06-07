@@ -24,22 +24,8 @@ def findClosest(valList, target):
         key = lambda i: abs(float(valList[i]) - target)
     )
 
-
-def main():
-    #open the HSI file
-    #fileHSI = envi.open("HSI_Summer2025_Data/100_feet/100_2/100_2.hdr", "HSI_Summer2025_Data/100_feet/100_2/100_2.hsi")
-
-    img = envi.open("../HSI_Summer2025_Data/100_feet/100_2/100_2.hdr", "../HSI_Summer2025_Data/100_feet/100_2/100_2.hsi")
-
-    #cube representing the HSI data
-    cubeHSI = np.array(img.load())
-
-    #wavelengths from the sensor
-    wavelengths = img.metadata["wavelength"]
-
-    print("wavelengths:")
-    print(wavelengths)
-
+#SIMIS algorithm
+def simisAlgorithm(cubeHSI, wavelengths):
     #load the entire data cube into a numpy array
     #for processing 
     #dataCube = fileHSI.load() 
@@ -63,25 +49,58 @@ def main():
     corresponding709Band = findClosest(wavelengths, 709)
     corresponding665Band = findClosest(wavelengths, 665)
 
-    #rho values for the bands closest to 620 and 709
-    rho620 = cubeHSI[:, :, corresponding620Band]
-    rho709 = cubeHSI[:, :, corresponding709Band]
+    #rho values (rho_w) for the bands closest to 620 and 709
+    rho_w620 = cubeHSI[:, :, corresponding620Band]
+    rho_w709 = cubeHSI[:, :, corresponding709Band]
+    rho_w665 = cubeHSI[:, :, corresponding665Band]
 
-    #ratio between the water-leaving reflectance of the 
-    #709 and 620 bands 
+    #absorption coefficients of water at the 620, 665, and 709 bands. 
+    #These values come from the buiteveld et al 1994 table
+    aw620 = 0.281
+    aw665 = 0.3423
+    aw709 = 0.6993
 
-    ratio709And620Bands = rho709 / rho620
-
-    print(ratio709And620Bands)
-
-    #find the absorption coefficient of water at the 709 band + a
     #backscattering coefficient 
+    backscatteringCoefficient = 1.61 * rho_w709 / (0.082 - 0.6 * rho_w709) 
 
-    #find the absorption coefficient of water at the 620 band 
+    #conversion factor
+    epsilon = 0.24
 
-    
+    gamma, delta = 1, 1
+
+    #estimate chlorophyll-a presence 
+    a_chl665 = ((rho_w709 / rho_w665) * (aw709 + backscatteringCoefficient - aw665)) / gamma
+
+    #final result 
+    simisResult = ((((rho_w709 / rho_w620) * (aw709 + backscatteringCoefficient)) - backscatteringCoefficient - aw620) /delta) - epsilon * a_chl665
+
+    return simisResult
+
+
+def main():
+    #open the HSI file
+    #fileHSI = envi.open("HSI_Summer2025_Data/100_feet/100_2/100_2.hdr", "HSI_Summer2025_Data/100_feet/100_2/100_2.hsi")
+
+    img = envi.open("../HSI_Summer2025_Data/100_feet/100_2/100_2.hdr", "../HSI_Summer2025_Data/100_feet/100_2/100_2.hsi")
+
+    #cube representing the HSI data
+    cubeHSI = np.array(img.load())
+
+    #wavelengths from the sensor
+    wavelengths = img.metadata["wavelength"]
+
+    #run the SIMIS algorithm
+    simisResult = simisAlgorithm(cubeHSI, wavelengths)
+
 
     #reduce each HSI pixel to a binary 
+
+    #use the mean as a threshold for now 
+    threshold = np.mean(simisResult) 
+    binaryMap = simisResult > threshold
+
+    #use 0s (false) and 1s (true)
+    binaryMap = binaryMap.astype(np.uint8)
 
     #stream the binary data to another device 
 
