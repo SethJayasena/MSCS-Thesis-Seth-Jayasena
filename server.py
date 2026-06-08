@@ -11,6 +11,8 @@ import folium
 import requests
 from IPython.display import display
 import math
+import socket
+import struct
 
 #function to find the closest value to a target value in a list.
 #Return the index of the closest value (indices are zero-indexed)
@@ -76,6 +78,48 @@ def simisAlgorithm(cubeHSI, wavelengths):
 
     return simisResult
 
+#function to stream the binary data to another device 
+def streamData(binaryMap): 
+    #currently, each bit occupies a full byte. So, we want to pack the 
+    #bits. This will reduce the size by roughly 8x 
+    packed = np.packbits(binaryMap)
+
+    #the receiver should know the height and width of the map
+    height, width = binaryMap.shape 
+
+    #for the communication method, use TCP sockets. This file 
+    #represents the server
+    serverSocket = socket.socket() 
+
+    #connect to the IP Address and port.
+    #For now, we are testing on the same machine, so set the IP Address
+    #to 127.0.0.1 (localhost)
+    ipAddress = "127.0.0.1"
+    port = 8000
+    serverSocket.connect((ipAddress, port))
+
+    #serialize the header 
+    #"!III" means:
+    #network byte order (big-endian)
+    #3 unsigned 32-bit integers 
+    header = struct.pack(
+        "!III", 
+        height, 
+        width, 
+        len(packed)
+    )
+
+    #send the header to the receiver
+    serverSocket.sendall(header)
+
+    #send the payload, which is the packed binary map 
+    #convert to bytes 
+    serverSocket.sendall(packed.tobytes())
+
+    serverSocket.close()
+    
+
+
 
 def main():
     #open the HSI file
@@ -103,9 +147,7 @@ def main():
     binaryMap = binaryMap.astype(np.uint8)
 
     #stream the binary data to another device 
-
-    #render the data as a straight line 
-
+    streamData(binaryMap)
 
 if __name__ == "__main__":
     main()
